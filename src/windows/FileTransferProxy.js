@@ -382,19 +382,31 @@ exec(win, fail, 'FileTransfer', 'upload',
         var fileNotFoundErrorCallback = function(error) {
             errorCallback(new FTErr(FTErr.FILE_NOT_FOUND_ERR, source, target, null, null, error));
         };
+        
+        var createFolder = function (path) {
+            var promise = new WinJS.Promise(function (onComplete, onError, p) {
+                Windows.Storage.StorageFolder.getFolderFromPathAsync(path).then(function (folder) {
+                    onComplete(folder);
+                }, function (error) {
+                    if (error.number !== -2147024894) {
+                        onError(error);
+                        return;
+                    }
+                    
+                    var parent = path.substr(0, path.lastIndexOf('\\')),
+                        folderName = path.substr(path.lastIndexOf('\\') + 1);
+                    
+                    return createFolder(parent)
+                            .then(function (folder) { return folder.createFolderAsync(folderName); })
+                            .then(function (folder) { onComplete(folder); }, onError);
+                });
+            });
+            
+            return promise;
+        }
 
-        Windows.Storage.StorageFolder.getFolderFromPathAsync(path).then(downloadCallback, function (error) {
-            // Handle non-existent directory
-            if (error.number === -2147024894) {
-                var parent = path.substr(0, path.lastIndexOf('\\')),
-                    folderNameToCreate = path.substr(path.lastIndexOf('\\') + 1);
-
-                Windows.Storage.StorageFolder.getFolderFromPathAsync(parent).then(function(parentFolder) {
-                    parentFolder.createFolderAsync(folderNameToCreate).then(downloadCallback, fileNotFoundErrorCallback);
-                }, fileNotFoundErrorCallback);
-            } else {
-                fileNotFoundErrorCallback();
-            }
+        createFolder(path).then(downloadCallback, function (error) {
+            fileNotFoundErrorCallback(error);
         });
     },
 
